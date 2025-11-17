@@ -10,7 +10,6 @@ app.use(cors());
 const uri =
   "mongodb+srv://paw-mart-db:12DHHORdtnQZrBIG@firstmongdbproject.yank7ts.mongodb.net/?appName=FirstMongDBProject";
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -28,9 +27,17 @@ async function run() {
 
     app.get("/listing", async (req, res) => {
       const result = await listingCollection.find().toArray();
-      console.log(result);
-
       res.send(result);
+    });
+
+    app.post("/listing", async (req, res) => {
+      const data = req.body;
+      console.log(data);
+      const result = listingCollection.insertOne(data);
+      res.send({
+        success: true,
+        result,
+      });
     });
 
     await client.db("admin").command({ ping: 1 });
@@ -38,8 +45,6 @@ async function run() {
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
   } finally {
-    // Ensures that the client will close when you finish/error
-    // await client.close();
   }
 }
 run().catch(console.dir);
