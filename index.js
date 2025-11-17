@@ -1,19 +1,21 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 // Middleware Setup
-app.use(express.json());
 app.use(cors());
+app.use(express.json());
 
 // JWT Secret
 const jwtToken = process.env.JWT_SECRET;
 
 // MongoDB
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@firstmongdbproject.yank7ts.mongodb.net/?appName=FirstMongDBProject`;
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@firstmongdbproject.yank7ts.mongodb.net/?retryWrites=true&w=majority&appName=FirstMongDBProject`;
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -50,23 +52,21 @@ async function run() {
   try {
     await client.connect();
 
-    const db = client.db(process.env.DB_USER);
-    listingCollection = db.collection("listings"); 
+    const db = client.db("paw-mart-db");
+    listingCollection = db.collection("listings");
 
     app.get("/listing", async (req, res) => {
       const result = await listingCollection.find().toArray();
       res.send(result);
     });
 
-    
     app.post("/getToken", (req, res) => {
       const loggedUser = req.body;
       const token = jwt.sign(loggedUser, jwtToken, { expiresIn: "1h" });
 
       res.send({ token });
-    }); 
+    });
 
-  
     app.post("/listing", verifyToken, async (req, res) => {
       const data = req.body;
 
@@ -87,9 +87,7 @@ async function run() {
     });
 
     await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    console.log("Connected to MongoDB!");
   } catch (error) {
     console.error("MongoDB connection or server setup failed:", error);
   }
@@ -101,5 +99,5 @@ app.get("/", (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`);
+  console.log(`Server running on port ${port}`);
 });
