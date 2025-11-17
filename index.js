@@ -1,14 +1,19 @@
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const jwt = require("jsonwebtoken");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = 3000;
 
+// Middleware Setup
 app.use(express.json());
 app.use(cors());
 
-const uri =
-  "mongodb+srv://paw-mart-db:12DHHORdtnQZrBIG@firstmongdbproject.yank7ts.mongodb.net/?appName=FirstMongDBProject";
+// JWT Secret
+const jwtToken = process.env.JWT_SECRET;
+
+// MongoDB
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@firstmongdbproject.yank7ts.mongodb.net/?appName=FirstMongDBProject`;
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -18,25 +23,66 @@ const client = new MongoClient(uri, {
   },
 });
 
+let listingCollection;
+
+const verifyToken = (req, res, next) => {
+  const authorization = req.headers.authorization;
+  if (!authorization) {
+    return res
+      .status(401)
+      .send({ error: true, message: "Unauthorized access: No token provided" });
+  }
+
+  const token = authorization.split(" ")[1];
+
+  jwt.verify(token, jwtToken, (err, decoded) => {
+    if (err) {
+      return res
+        .status(403)
+        .send({ error: true, message: "Forbidden access: Token is invalid" });
+    }
+    req.decoded = decoded;
+    next();
+  });
+};
+
 async function run() {
   try {
     await client.connect();
 
-    const db = client.db("pet-mart-db");
-    const listingCollection = db.collection("listings");
+    const db = client.db(process.env.DB_USER);
+    listingCollection = db.collection("listings"); 
 
     app.get("/listing", async (req, res) => {
       const result = await listingCollection.find().toArray();
       res.send(result);
     });
 
-    app.post("/listing", async (req, res) => {
+    
+    app.post("/getToken", (req, res) => {
+      const loggedUser = req.body;
+      const token = jwt.sign(loggedUser, jwtToken, { expiresIn: "1h" });
+
+      res.send({ token });
+    }); 
+
+  
+    app.post("/listing", verifyToken, async (req, res) => {
       const data = req.body;
-      console.log(data);
-      const result = listingCollection.insertOne(data);
+
+      if (req.decoded.email !== data.email) {
+        return res.status(403).send({
+          success: false,
+          message: "Forbidden: Listing email does not match user token.",
+        });
+      }
+
+      console.log("Received data from verified user:", data);
+      const result = await listingCollection.insertOne(data);
       res.send({
         success: true,
-        result,
+        listingId: result.insertedId,
+        message: "Listing created successfully.",
       });
     });
 
@@ -44,7 +90,8 @@ async function run() {
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
-  } finally {
+  } catch (error) {
+    console.error("MongoDB connection or server setup failed:", error);
   }
 }
 run().catch(console.dir);
