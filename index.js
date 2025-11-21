@@ -20,6 +20,7 @@ const client = new MongoClient(uri);
 
 let listingCollection;
 let usersCollection;
+let ordersCollection;
 
 // VERIFY TOKEN MIDDLEWARE
 const verifyToken = (req, res, next) => {
@@ -48,6 +49,7 @@ async function run() {
     const db = client.db("pet-mart-db");
     listingCollection = db.collection("listings");
     usersCollection = db.collection("users");
+    ordersCollection = db.collection("orders"); // <-- initialize ordersCollection
 
     // GET LISTINGS
     app.get("/listings", async (req, res) => {
@@ -59,8 +61,7 @@ async function run() {
       }
     });
 
-
-    // UPSERT USERS
+    // USERS
     app.post("/users", async (req, res) => {
       try {
         const user = req.body;
@@ -98,7 +99,6 @@ async function run() {
     app.post("/listings", verifyToken, async (req, res) => {
       const data = req.body;
 
-    
       if (req.decoded.email !== data.email) {
         return res.status(403).send({
           success: false,
@@ -117,6 +117,35 @@ async function run() {
         res.status(500).send({ message: "Insert failed" });
       }
     });
+
+    // ORDERS 
+    app.post("/orders", verifyToken, async (req, res) => {
+      try {
+        const orderData = req.body;
+
+        if (!ordersCollection) {
+          return res
+            .status(500)
+            .send({ success: false, message: "Orders collection not initialized" });
+        }
+
+        const result = await ordersCollection.insertOne(orderData);
+
+        res.send({
+          success: true,
+          message: "Order saved successfully",
+          data: result,
+        });
+      } catch (err) {
+        console.error("Order save FAILED:", err);
+        res.status(500).send({
+          success: false,
+          message: "Error saving order",
+        });
+      }
+    });
+
+    console.log("Routes registered and ready.");
   } catch (err) {
     console.error("MongoDB connection failed →", err);
     process.exit(1);
