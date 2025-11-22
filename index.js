@@ -7,14 +7,14 @@ const { MongoClient, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ========= MIDDLEWARE =========
+//MIDDLEWARE
 app.use(cors());
 app.use(express.json());
 
 // JWT SECRET
 const jwtToken = process.env.JWT_SECRET;
 
-// ========= MONGODB CONNECTION =========
+//MongoDB URI
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@firstmongdbproject.yank7ts.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri);
 
@@ -22,7 +22,7 @@ let listingCollection;
 let usersCollection;
 let ordersCollection;
 
-// ========= JWT VERIFY FUNCTION =========
+// JWT Verify
 const verifyToken = (req, res, next) => {
   const authorization = req.headers.authorization;
 
@@ -41,7 +41,7 @@ const verifyToken = (req, res, next) => {
   });
 };
 
-// ========= START SERVER =========
+
 async function run() {
   try {
     await client.connect();
@@ -52,9 +52,7 @@ async function run() {
     usersCollection = db.collection("users");
     ordersCollection = db.collection("orders");
 
-    // ========== LISTINGS ==========
-
-    // GET ALL LISTINGS OR FILTER BY EMAIL
+    //listings
     app.get("/listings", async (req, res) => {
       const email = req.query.email;
       let query = {};
@@ -71,7 +69,7 @@ async function run() {
       res.send(listings);
     });
 
-    // GET RECENT LISTINGS (LIMIT 6)
+   
     app.get("/listings/recent", async (req, res) => {
       const listings = await listingCollection
         .find()
@@ -82,7 +80,7 @@ async function run() {
       res.send(listings);
     });
 
-    // CREATE LISTING (PROTECTED)
+
     app.post("/listings", verifyToken, async (req, res) => {
       const data = req.body;
 
@@ -96,7 +94,7 @@ async function run() {
       res.send({ success: true, listingId: result.insertedId });
     });
 
-    // GET USER'S OWN LISTINGS (PROTECTED)
+
     app.get("/myListings/:email", verifyToken, async (req, res) => {
       if (req.decoded.email !== req.params.email) {
         return res.status(403).send({ message: "Forbidden" });
@@ -110,7 +108,7 @@ async function run() {
       res.send(listings);
     });
 
-    // UPDATE LISTING (PROTECTED)
+    // Update Listing
     app.put("/listings/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const data = req.body;
@@ -133,7 +131,7 @@ async function run() {
       res.send({ success: true, result });
     });
 
-    // DELETE LISTING (PROTECTED)
+    // Delete Listing
     app.delete("/listings/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
 
@@ -144,8 +142,6 @@ async function run() {
       if (!existing) {
         return res.status(404).send({ message: "Not found" });
       }
-
-      // Check owner
       if (existing.email !== req.decoded.email) {
         return res
           .status(403)
@@ -159,9 +155,7 @@ async function run() {
       res.send({ success: true, result });
     });
 
-    // ========== USERS ==========
-
-    // UPSERT USER
+    // Users
     app.post("/users", async (req, res) => {
       const user = req.body;
       const query = { email: user.email };
@@ -172,7 +166,23 @@ async function run() {
       res.send({ success: true, result });
     });
 
-    // GENERATE JWT TOKEN
+    // Get User Orders
+    app.get("/orders", verifyToken, async (req, res) => {
+      const email = req.query.email;
+
+      if (req.decoded.email !== email) {
+        return res.status(403).send({ message: "Forbidden" });
+      }
+
+      const orders = await ordersCollection
+        .find({ buyerEmail: email })
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      res.send(orders);
+    });
+
+    // Generate JWT Token
     app.post("/getToken", (req, res) => {
       const token = jwt.sign(req.body, jwtToken, { expiresIn: "1h" });
       res.send({ token });
