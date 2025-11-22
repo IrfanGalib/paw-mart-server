@@ -7,14 +7,14 @@ const { MongoClient, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 
-// MIDDLEWARE
+// ========= MIDDLEWARE =========
 app.use(cors());
 app.use(express.json());
 
 // JWT SECRET
 const jwtToken = process.env.JWT_SECRET;
 
-// MONGODB CONNECTION
+// ========= MONGODB CONNECTION =========
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@firstmongdbproject.yank7ts.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri);
 
@@ -22,7 +22,7 @@ let listingCollection;
 let usersCollection;
 let ordersCollection;
 
-// VERIFY TOKEN MIDDLEWARE
+// ========= JWT VERIFY FUNCTION =========
 const verifyToken = (req, res, next) => {
   const authorization = req.headers.authorization;
 
@@ -41,6 +41,7 @@ const verifyToken = (req, res, next) => {
   });
 };
 
+// ========= START SERVER =========
 async function run() {
   try {
     await client.connect();
@@ -51,141 +52,146 @@ async function run() {
     usersCollection = db.collection("users");
     ordersCollection = db.collection("orders");
 
-    // GET LISTINGS
+    // ========== LISTINGS ==========
+
+    // GET ALL LISTINGS OR FILTER BY EMAIL
     app.get("/listings", async (req, res) => {
-      try {
-        const { email } = req.query;
-        const filter = email ? { email } : {};
-        const result = await listingCollection.find(filter).toArray();
-        res.send(result);
-      } catch (err) {
-        console.error("GET /listings failed:", err);
-        res.status(500).send({ message: "Failed to fetch listings" });
+      const email = req.query.email;
+      let query = {};
+
+      if (email) {
+        query.email = email;
       }
+
+      const listings = await listingCollection
+        .find(query)
+        .sort({ created_at: -1 })
+        .toArray();
+
+      res.send(listings);
     });
 
-    // Create listing
+    // GET RECENT LISTINGS (LIMIT 6)
+    app.get("/listings/recent", async (req, res) => {
+      const listings = await listingCollection
+        .find()
+        .sort({ created_at: -1 })
+        .limit(6)
+        .toArray();
+
+      res.send(listings);
+    });
+
+    // CREATE LISTING (PROTECTED)
     app.post("/listings", verifyToken, async (req, res) => {
       const data = req.body;
 
       if (req.decoded.email !== data.email) {
-        return res.status(403).send({
-          success: false,
-          message: "Forbidden: Email mismatch",
-        });
+        return res.status(403).send({ message: "Forbidden email mismatch" });
       }
 
-      try {
-        const toInsert = { ...data, created_at: new Date() };
-        const result = await listingCollection.insertOne(toInsert);
+      data.created_at = new Date();
 
-        res.send({
-          success: true,
-          listingId: result.insertedId,
-          message: "Listing created successfully",
-        });
-      } catch (err) {
-        console.error("POST /listings failed:", err);
-        res.status(500).send({ message: "Insert failed" });
-      }
+      const result = await listingCollection.insertOne(data);
+      res.send({ success: true, listingId: result.insertedId });
     });
 
-    // Update listing
+    // GET USER'S OWN LISTINGS (PROTECTED)
+    app.get("/myListings/:email", verifyToken, async (req, res) => {
+      if (req.decoded.email !== req.params.email) {
+        return res.status(403).send({ message: "Forbidden" });
+      }
+
+      const listings = await listingCollection
+        .find({ email: req.params.email })
+        .sort({ created_at: -1 })
+        .toArray();
+
+      res.send(listings);
+    });
+
+    // UPDATE LISTING (PROTECTED)
     app.put("/listings/:id", verifyToken, async (req, res) => {
-      try {
-        const id = req.params.id;
-        const updates = req.body;
+      const id = req.params.id;
+      const data = req.body;
 
-        const existing = await listingCollection.findOne({ _id: new ObjectId(id) });
-        if (!existing) {
-          return res.status(404).send({ success: false, message: "Listing not found" });
-        }
-        if (req.decoded.email !== existing.email) {
-          return res.status(403).send({ success: false, message: "Forbidden: not owner" });
-        }
+      const filter = { _id: new ObjectId(id) };
 
-        const updateDoc = { $set: { ...updates, updated_at: new Date() } };
-        const result = await listingCollection.updateOne({ _id: new ObjectId(id) }, updateDoc);
+      const updateDoc = {
+        $set: {
+          name: data.name,
+          category: data.category,
+          Price: data.Price,
+          location: data.location,
+          description: data.description,
+          image: data.image,
+          updated_at: new Date(),
+        },
+      };
 
-        if (result.modifiedCount > 0) {
-          res.send({ success: true, message: "Listing updated" });
-        } else {
-          res.send({ success: false, message: "No changes made" });
-        }
-      } catch (err) {
-        console.error("PUT /listings/:id failed:", err);
-        res.status(500).send({ success: false, message: "Failed to update" });
-      }
+      const result = await listingCollection.updateOne(filter, updateDoc);
+      res.send({ success: true, result });
     });
 
-    // Delete listing
+    // DELETE LISTING (PROTECTED)
     app.delete("/listings/:id", verifyToken, async (req, res) => {
-      try {
-        const id = req.params.id;
-        const existing = await listingCollection.findOne({ _id: new ObjectId(id) });
-        if (!existing) {
-          return res.status(404).send({ success: false, message: "Listing not found" });
-        }
+      const id = req.params.id;
 
-        if (req.decoded.email !== existing.email) {
-          return res.status(403).send({ success: false, message: "Forbidden: not owner" });
-        }
+      const existing = await listingCollection.findOne({
+        _id: new ObjectId(id),
+      });
 
-        const result = await listingCollection.deleteOne({ _id: new ObjectId(id) });
-        if (result.deletedCount > 0) {
-          res.send({ success: true, message: "Listing deleted" });
-        } else {
-          res.send({ success: false, message: "Failed to delete" });
-        }
-      } catch (err) {
-        console.error("DELETE /listings/:id failed:", err);
-        res.status(500).send({ success: false, message: "Failed to delete" });
+      if (!existing) {
+        return res.status(404).send({ message: "Not found" });
       }
+
+      // Check owner
+      if (existing.email !== req.decoded.email) {
+        return res
+          .status(403)
+          .send({ message: "Forbidden - not your listing" });
+      }
+
+      const result = await listingCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+
+      res.send({ success: true, result });
     });
 
-    // ORDERS
-    app.post("/orders", verifyToken, async (req, res) => {
-      try {
-        const orderData = req.body;
+    // ========== USERS ==========
 
-        if (!ordersCollection) {
-          return res.status(500).send({
-            success: false,
-            message: "Orders collection not initialized",
-          });
-        }
+    // UPSERT USER
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+      const query = { email: user.email };
+      const updateDoc = { $set: user };
+      const options = { upsert: true };
 
-        const result = await ordersCollection.insertOne(orderData);
-
-        res.send({
-          success: true,
-          message: "Order saved successfully",
-          data: result,
-        });
-      } catch (err) {
-        console.error("Order save FAILED:", err);
-        res.status(500).send({
-          success: false,
-          message: "Error saving order",
-        });
-      }
+      const result = await usersCollection.updateOne(query, updateDoc, options);
+      res.send({ success: true, result });
     });
 
-    console.log("Routes registered and ready.");
-  } catch (err) {
-    console.error("MongoDB connection failed →", err);
-    process.exit(1);
+    // GENERATE JWT TOKEN
+    app.post("/getToken", (req, res) => {
+      const token = jwt.sign(req.body, jwtToken, { expiresIn: "1h" });
+      res.send({ token });
+    });
+
+    console.log("All routes active!");
+  } catch (error) {
+    console.error("Error:", error);
   }
 }
 
-run().catch(console.error);
+run();
 
 // ROOT
 app.get("/", (req, res) => {
-  res.send("Server Running");
+  res.send("Server Running...");
 });
 
 // LISTEN
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+app.listen(port, () =>
+  console.log(`🚀 Server running on http://localhost:${port}`)
+);
