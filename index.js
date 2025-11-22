@@ -49,53 +49,22 @@ async function run() {
     const db = client.db("pet-mart-db");
     listingCollection = db.collection("listings");
     usersCollection = db.collection("users");
-    ordersCollection = db.collection("orders"); // <-- initialize ordersCollection
+    ordersCollection = db.collection("orders");
 
     // GET LISTINGS
     app.get("/listings", async (req, res) => {
       try {
-        const result = await listingCollection.find().toArray();
+        const { email } = req.query;
+        const filter = email ? { email } : {};
+        const result = await listingCollection.find(filter).toArray();
         res.send(result);
       } catch (err) {
+        console.error("GET /listings failed:", err);
         res.status(500).send({ message: "Failed to fetch listings" });
       }
     });
 
-    // USERS
-    app.post("/users", async (req, res) => {
-      try {
-        const user = req.body;
-        const query = { email: user.email };
-        const updateDoc = { $set: user };
-        const options = { upsert: true };
-
-        const result = await usersCollection.updateOne(
-          query,
-          updateDoc,
-          options
-        );
-
-        res.send({
-          success: true,
-          message: "User synced successfully.",
-          result,
-        });
-      } catch (error) {
-        console.error("User POST error:", error);
-        res
-          .status(500)
-          .send({ error: true, message: "Failed to sync user data" });
-      }
-    });
-
-    // GENERATE TOKEN
-    app.post("/getToken", (req, res) => {
-      const loggedUser = req.body;
-      const token = jwt.sign(loggedUser, jwtToken, { expiresIn: "1h" });
-      res.send({ token });
-    });
-
-    // CREATE LISTING
+    // Create listing
     app.post("/listings", verifyToken, async (req, res) => {
       const data = req.body;
 
@@ -107,26 +76,83 @@ async function run() {
       }
 
       try {
-        const result = await listingCollection.insertOne(data);
+        const toInsert = { ...data, created_at: new Date() };
+        const result = await listingCollection.insertOne(toInsert);
+
         res.send({
           success: true,
           listingId: result.insertedId,
           message: "Listing created successfully",
         });
       } catch (err) {
+        console.error("POST /listings failed:", err);
         res.status(500).send({ message: "Insert failed" });
       }
     });
 
-    // ORDERS 
+    // Update listing
+    app.put("/listings/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const updates = req.body;
+
+        const existing = await listingCollection.findOne({ _id: new ObjectId(id) });
+        if (!existing) {
+          return res.status(404).send({ success: false, message: "Listing not found" });
+        }
+        if (req.decoded.email !== existing.email) {
+          return res.status(403).send({ success: false, message: "Forbidden: not owner" });
+        }
+
+        const updateDoc = { $set: { ...updates, updated_at: new Date() } };
+        const result = await listingCollection.updateOne({ _id: new ObjectId(id) }, updateDoc);
+
+        if (result.modifiedCount > 0) {
+          res.send({ success: true, message: "Listing updated" });
+        } else {
+          res.send({ success: false, message: "No changes made" });
+        }
+      } catch (err) {
+        console.error("PUT /listings/:id failed:", err);
+        res.status(500).send({ success: false, message: "Failed to update" });
+      }
+    });
+
+    // Delete listing
+    app.delete("/listings/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const existing = await listingCollection.findOne({ _id: new ObjectId(id) });
+        if (!existing) {
+          return res.status(404).send({ success: false, message: "Listing not found" });
+        }
+
+        if (req.decoded.email !== existing.email) {
+          return res.status(403).send({ success: false, message: "Forbidden: not owner" });
+        }
+
+        const result = await listingCollection.deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount > 0) {
+          res.send({ success: true, message: "Listing deleted" });
+        } else {
+          res.send({ success: false, message: "Failed to delete" });
+        }
+      } catch (err) {
+        console.error("DELETE /listings/:id failed:", err);
+        res.status(500).send({ success: false, message: "Failed to delete" });
+      }
+    });
+
+    // ORDERS
     app.post("/orders", verifyToken, async (req, res) => {
       try {
         const orderData = req.body;
 
         if (!ordersCollection) {
-          return res
-            .status(500)
-            .send({ success: false, message: "Orders collection not initialized" });
+          return res.status(500).send({
+            success: false,
+            message: "Orders collection not initialized",
+          });
         }
 
         const result = await ordersCollection.insertOne(orderData);
