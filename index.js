@@ -43,7 +43,9 @@ const verifyToken = (req, res, next) => {
 
 async function run() {
   try {
+   if (!client.topology) {
     await client.connect();
+}
     console.log("MongoDB Connected!");
 
     const db = client.db("pet-mart-db");
@@ -51,10 +53,8 @@ async function run() {
     usersCollection = db.collection("users");
     ordersCollection = db.collection("orders");
 
-    // -----------------------------
+    
     // LISTINGS
-    // -----------------------------
-
     // GET ALL LISTINGS
     app.get("/listings", async (req, res) => {
       const email = req.query.email;
@@ -157,10 +157,7 @@ async function run() {
       res.send({ success: true, result });
     });
 
-    // ------------------------------------
     // USERS
-    // ------------------------------------
-
     // UPSERT USER
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -173,10 +170,7 @@ async function run() {
       res.send({ success: true, result });
     });
 
-    // ------------------------------------
     // ORDERS
-    // ------------------------------------
-
     // CREATE ORDER
     app.post("/orders", verifyToken, async (req, res) => {
       const order = req.body;
@@ -210,10 +204,7 @@ async function run() {
       res.send(orders);
     });
 
-    // ------------------------------------
     // JWT TOKEN
-    // ------------------------------------
-
     app.post("/getToken", (req, res) => {
       const token = jwt.sign(req.body, jwtToken, { expiresIn: "1h" });
       res.send({ token });
