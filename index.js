@@ -7,14 +7,14 @@ const { MongoClient, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 
-//MIDDLEWARE
+// MIDDLEWARE
 app.use(cors());
 app.use(express.json());
 
 // JWT SECRET
 const jwtToken = process.env.JWT_SECRET;
 
-//MongoDB URI
+// MONGODB CONNECTION
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@firstmongdbproject.yank7ts.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri);
 
@@ -22,7 +22,7 @@ let listingCollection;
 let usersCollection;
 let ordersCollection;
 
-// JWT Verify
+// VERIFY TOKEN
 const verifyToken = (req, res, next) => {
   const authorization = req.headers.authorization;
 
@@ -33,14 +33,13 @@ const verifyToken = (req, res, next) => {
   const token = authorization.split(" ")[1];
 
   jwt.verify(token, jwtToken, (err, decoded) => {
-    if (err) {
+    if (err)
       return res.status(403).send({ error: true, message: "Invalid token" });
-    }
+
     req.decoded = decoded;
     next();
   });
 };
-
 
 async function run() {
   try {
@@ -52,7 +51,11 @@ async function run() {
     usersCollection = db.collection("users");
     ordersCollection = db.collection("orders");
 
-    //listings
+    // -----------------------------
+    // LISTINGS
+    // -----------------------------
+
+    // GET ALL LISTINGS
     app.get("/listings", async (req, res) => {
       const email = req.query.email;
       let query = {};
@@ -69,18 +72,18 @@ async function run() {
       res.send(listings);
     });
 
-   
+    // GET RECENT 6 LISTINGS
     app.get("/listings/recent", async (req, res) => {
-      const listings = await listingCollection
+      const recent = await listingCollection
         .find()
         .sort({ created_at: -1 })
         .limit(6)
         .toArray();
 
-      res.send(listings);
+      res.send(recent);
     });
 
-
+    // CREATE LISTING
     app.post("/listings", verifyToken, async (req, res) => {
       const data = req.body;
 
@@ -94,7 +97,7 @@ async function run() {
       res.send({ success: true, listingId: result.insertedId });
     });
 
-
+    // GET MY LISTINGS
     app.get("/myListings/:email", verifyToken, async (req, res) => {
       if (req.decoded.email !== req.params.email) {
         return res.status(403).send({ message: "Forbidden" });
@@ -108,7 +111,7 @@ async function run() {
       res.send(listings);
     });
 
-    // Update Listing
+    // UPDATE LISTING
     app.put("/listings/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const data = req.body;
@@ -131,7 +134,7 @@ async function run() {
       res.send({ success: true, result });
     });
 
-    // Delete Listing
+    // DELETE LISTING
     app.delete("/listings/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
 
@@ -139,9 +142,8 @@ async function run() {
         _id: new ObjectId(id),
       });
 
-      if (!existing) {
-        return res.status(404).send({ message: "Not found" });
-      }
+      if (!existing) return res.status(404).send({ message: "Not found" });
+
       if (existing.email !== req.decoded.email) {
         return res
           .status(403)
@@ -155,9 +157,14 @@ async function run() {
       res.send({ success: true, result });
     });
 
-    // Users
+    // ------------------------------------
+    // USERS
+    // ------------------------------------
+
+    // UPSERT USER
     app.post("/users", async (req, res) => {
       const user = req.body;
+
       const query = { email: user.email };
       const updateDoc = { $set: user };
       const options = { upsert: true };
@@ -166,7 +173,28 @@ async function run() {
       res.send({ success: true, result });
     });
 
-    // Get User Orders
+    // ------------------------------------
+    // ORDERS
+    // ------------------------------------
+
+    // CREATE ORDER
+    app.post("/orders", verifyToken, async (req, res) => {
+      const order = req.body;
+
+      if (req.decoded.email !== order.buyerEmail) {
+        return res.status(403).send({
+          message: "Forbidden - email mismatch",
+        });
+      }
+
+      order.createdAt = new Date();
+
+      const result = await ordersCollection.insertOne(order);
+
+      res.send({ success: true, orderId: result.insertedId });
+    });
+
+    // GET USER ORDERS
     app.get("/orders", verifyToken, async (req, res) => {
       const email = req.query.email;
 
@@ -182,15 +210,18 @@ async function run() {
       res.send(orders);
     });
 
-    // Generate JWT Token
+    // ------------------------------------
+    // JWT TOKEN
+    // ------------------------------------
+
     app.post("/getToken", (req, res) => {
       const token = jwt.sign(req.body, jwtToken, { expiresIn: "1h" });
       res.send({ token });
     });
 
     console.log("All routes active!");
-  } catch (error) {
-    console.error("Error:", error);
+  } catch (err) {
+    console.error(err);
   }
 }
 
